@@ -48,6 +48,18 @@ pip install -e ".[web]"
 
 ### 2. Install hooks into Kimi CLI
 
+Make sure `kimi-mem` is available in your `PATH`:
+
+```bash
+# If installed in a virtual environment, link the binary:
+ln -s "$(pwd)/.venv/bin/kimi-mem" ~/.local/bin/kimi-mem
+
+# Or install globally
+pip install kimi-mem
+```
+
+Then install the hooks:
+
 ```bash
 kimi-mem install
 ```
