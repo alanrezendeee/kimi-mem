@@ -50,9 +50,10 @@ def uninstall(dry_run: bool) -> None:
 @click.option("--project", "-p", help="Filter by project path.")
 @click.option("--limit", "-n", default=10, help="Max results.")
 @click.option("--semantic", "-s", is_flag=True, help="Use semantic (vector) search instead of full-text.")
-def search(query: str, project: str | None, limit: int, semantic: bool) -> None:
+@click.option("--include-private", is_flag=True, help="Include private memories in results.")
+def search(query: str, project: str | None, limit: int, semantic: bool, include_private: bool) -> None:
     """Search stored memories (full-text or semantic)."""
-    results = search_memories(query, project_path=project, limit=limit, semantic=semantic)
+    results = search_memories(query, project_path=project, limit=limit, semantic=semantic, include_private=include_private)
     if not results:
         click.echo("No memories found.")
         return
@@ -68,9 +69,10 @@ def search(query: str, project: str | None, limit: int, semantic: bool) -> None:
 @click.option("--project", "-p", help="Filter by project path.")
 @click.option("--limit", "-n", default=10, help="Max results.")
 @click.option("--semantic", "-s", is_flag=True, help="Use semantic search.")
-def index(query: str, project: str | None, limit: int, semantic: bool) -> None:
+@click.option("--include-private", is_flag=True, help="Include private memories in results.")
+def index(query: str, project: str | None, limit: int, semantic: bool, include_private: bool) -> None:
     """Progressive disclosure Layer 1: compact index (~50 tokens/result)."""
-    results = layer1_index(query, project_path=project, limit=limit, semantic=semantic)
+    results = layer1_index(query, project_path=project, limit=limit, semantic=semantic, include_private=include_private)
     if not results:
         click.echo("No memories found.")
         return
@@ -122,9 +124,10 @@ def get_cmd(memory_id: str) -> None:
 @main.command()
 @click.option("--project", "-p", help="Filter by project path.")
 @click.option("--limit", "-n", default=10, help="Max results.")
-def recent(project: str | None, limit: int) -> None:
+@click.option("--include-private", is_flag=True, help="Include private memories in results.")
+def recent(project: str | None, limit: int, include_private: bool) -> None:
     """Show recent memories."""
-    results = get_recent_memories(project_path=project, limit=limit)
+    results = get_recent_memories(project_path=project, limit=limit, include_private=include_private)
     if not results:
         click.echo("No memories found.")
         return

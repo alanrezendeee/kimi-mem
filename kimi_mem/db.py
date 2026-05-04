@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS memories (
     tags TEXT,                 -- JSON list
     created_at TEXT,
     access_count INTEGER DEFAULT 0,
-    last_accessed TEXT
+    last_accessed TEXT,
+    is_private INTEGER DEFAULT 0
 );
 
 -- FTS5 virtual table for full-text search over memories
@@ -130,7 +131,10 @@ class ObservationStore:
         obs_type: str,
         content: str,
         tool_name: str | None = None,
-    ) -> str:
+    ) -> str | None:
+        from kimi_mem.privacy import is_private_observation
+        if is_private_observation(content, tool_name):
+            return None
         oid = str(uuid.uuid4())
         with get_connection() as conn:
             conn.execute(
@@ -160,9 +164,13 @@ class MemoryStore:
         project_path: str | None = None,
         tags: list[str] | None = None,
         embedding: list[float] | None = None,
+        is_private: bool = False,
     ) -> str:
+        from kimi_mem.privacy import contains_private
+        if contains_private(content):
+            is_private = True
         mid = str(uuid.uuid4())
-        if embedding is None:
+        if embedding is None and not is_private:
             try:
                 embedding = get_embedding(content)
             except Exception:
@@ -170,7 +178,7 @@ class MemoryStore:
 
         with get_connection() as conn:
             cur = conn.execute(
-                "INSERT INTO memories (id, session_id, type, content, project_path, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO memories (id, session_id, type, content, project_path, tags, created_at, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     mid,
                     session_id or "",
@@ -179,9 +187,10 @@ class MemoryStore:
                     project_path or "",
                     json.dumps(tags or []),
                     datetime.now(timezone.utc).isoformat(),
+                    1 if is_private else 0,
                 ),
             )
-            if embedding:
+            if embedding and not is_private:
                 conn.execute(
                     "INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)",
                     (cur.lastrowid, json.dumps(embedding)),
@@ -189,16 +198,22 @@ class MemoryStore:
         return mid
 
     @staticmethod
-    def search(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False) -> list[dict]:
+    def search(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False, include_private: bool = False) -> list[dict]:
         """Full-text or semantic search over memories."""
         if semantic:
-            return MemoryStore._semantic_search(query, project_path=project_path, limit=limit)
+            return MemoryStore._semantic_search(query, project_path=project_path, limit=limit, include_private=include_private)
 
         sql = """
             SELECT m.* FROM memories m
             JOIN memories_fts fts ON m.rowid = fts.rowid
-            WHERE memories_fts MATCH ?
+            WHERE memories_fts MATCH ? AND m.is_private = 0
         """
+        if include_private:
+            sql = """
+                SELECT m.* FROM memories m
+                JOIN memories_fts fts ON m.rowid = fts.rowid
+                WHERE memories_fts MATCH ?
+            """
         params: tuple = (query,)
         if project_path:
             sql += " AND m.project_path = ?"
@@ -211,7 +226,7 @@ class MemoryStore:
             return [dict(r) for r in rows]
 
     @staticmethod
-    def _semantic_search(query: str, project_path: str | None = None, limit: int = 10) -> list[dict]:
+    def _semantic_search(query: str, project_path: str | None = None, limit: int = 10, include_private: bool = False) -> list[dict]:
         try:
             query_vec = get_embedding(query)
         except Exception:
@@ -221,9 +236,17 @@ class MemoryStore:
             SELECT m.*, distance AS score
             FROM memories m
             JOIN memory_vectors v ON m.rowid = v.rowid
-            WHERE v.embedding MATCH ?
+            WHERE v.embedding MATCH ? AND m.is_private = 0
             AND k = ?
         """
+        if include_private:
+            sql = """
+                SELECT m.*, distance AS score
+                FROM memories m
+                JOIN memory_vectors v ON m.rowid = v.rowid
+                WHERE v.embedding MATCH ?
+                AND k = ?
+            """
         params: tuple = (json.dumps(query_vec), limit)
 
         if project_path:
@@ -237,8 +260,10 @@ class MemoryStore:
             return [dict(r) for r in rows]
 
     @staticmethod
-    def recent(project_path: str | None = None, limit: int = 10) -> list[dict]:
-        sql = "SELECT * FROM memories WHERE 1=1"
+    def recent(project_path: str | None = None, limit: int = 10, include_private: bool = False) -> list[dict]:
+        sql = "SELECT * FROM memories WHERE is_private = 0"
+        if include_private:
+            sql = "SELECT * FROM memories WHERE 1=1"
         params: list = []
         if project_path:
             sql += " AND project_path = ?"

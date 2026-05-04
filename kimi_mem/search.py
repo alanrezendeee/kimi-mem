@@ -24,21 +24,21 @@ def format_for_injection(memories: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def search_memories(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False) -> list[dict]:
+def search_memories(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False, include_private: bool = False) -> list[dict]:
     """Search memories by query string (text or semantic)."""
-    return MemoryStore.search(query, project_path=project_path, limit=limit, semantic=semantic)
+    return MemoryStore.search(query, project_path=project_path, limit=limit, semantic=semantic, include_private=include_private)
 
 
-def get_recent_memories(project_path: str | None = None, limit: int = 10) -> list[dict]:
+def get_recent_memories(project_path: str | None = None, limit: int = 10, include_private: bool = False) -> list[dict]:
     """Get most recent memories."""
-    return MemoryStore.recent(project_path=project_path, limit=limit)
+    return MemoryStore.recent(project_path=project_path, limit=limit, include_private=include_private)
 
 
 # Progressive Disclosure Layer 1: Compact Index
 
-def layer1_index(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False) -> list[dict]:
+def layer1_index(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False, include_private: bool = False) -> list[dict]:
     """Return compact index with minimal fields (~50-100 tokens/result)."""
-    results = MemoryStore.search(query, project_path=project_path, limit=limit, semantic=semantic)
+    results = MemoryStore.search(query, project_path=project_path, limit=limit, semantic=semantic, include_private=include_private)
     return [
         {
             "id": r["id"],
