@@ -3,12 +3,11 @@
 import json
 import os
 import sys
-from pathlib import Path
 
 import click
 
 from kimi_mem import __version__
-from kimi_mem.db import init_db, MemoryStore, ObservationStore, SessionStore
+from kimi_mem.db import init_db, MemoryStore
 from kimi_mem.installer import install_hooks, uninstall_hooks
 from kimi_mem.search import (
     search_memories,

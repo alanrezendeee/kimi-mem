@@ -1,12 +1,10 @@
 """Install kimi-mem hooks into Kimi CLI config.toml."""
 
 import shutil
-import subprocess
 from pathlib import Path
 
-import toml
 
-from kimi_mem.config import get_kimi_config_path, get_data_dir
+from kimi_mem.config import get_kimi_config_path
 
 HOOKS_CONFIG = """
 # kimi-mem hooks — persistent memory for Kimi Code CLI

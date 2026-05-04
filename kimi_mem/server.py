@@ -1,16 +1,13 @@
 """Web viewer for kimi-mem — FastAPI dashboard."""
 
 import json
-import os
-from pathlib import Path
 
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 
 from kimi_mem import __version__
 from kimi_mem.db import get_connection, init_db
-from kimi_mem.search import layer1_index, layer3_full
+from kimi_mem.search import layer3_full
 
 app = FastAPI(title="kimi-mem", version=__version__)
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Hook: PostToolUse — capture tool usage observations."""
 
-import json
 import os
 import sys
 from pathlib import Path
