@@ -178,5 +178,21 @@ def init() -> None:
     click.echo("✅ Database initialized.")
 
 
+@main.command("serve")
+@click.option("--host", default="127.0.0.1", help="Bind host.")
+@click.option("--port", default=37777, help="Bind port.")
+def serve(host: str, port: int) -> None:
+    """Start the web viewer dashboard."""
+    try:
+        import uvicorn
+        from kimi_mem.server import app
+    except ImportError:
+        click.echo("❌ Web dependencies not installed.")
+        click.echo("   pip install 'kimi-mem[web]'")
+        sys.exit(1)
+    click.echo(f"🌐 Starting kimi-mem viewer at http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     main()
