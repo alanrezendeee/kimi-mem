@@ -10,7 +10,18 @@ import click
 from kimi_mem import __version__
 from kimi_mem.db import init_db, MemoryStore, ObservationStore, SessionStore
 from kimi_mem.installer import install_hooks, uninstall_hooks
-from kimi_mem.search import search_memories, get_recent_memories
+from kimi_mem.search import (
+    search_memories,
+    get_recent_memories,
+    layer1_index,
+    layer2_timeline,
+    layer3_full,
+)
+
+
+def _fmt_tags(tags_raw):
+    tags_list = json.loads(tags_raw) if isinstance(tags_raw, str) else tags_raw or []
+    return ", ".join(tags_list)
 
 
 @click.group()
@@ -38,18 +49,74 @@ def uninstall(dry_run: bool) -> None:
 @click.argument("query")
 @click.option("--project", "-p", help="Filter by project path.")
 @click.option("--limit", "-n", default=10, help="Max results.")
-def search(query: str, project: str | None, limit: int) -> None:
-    """Search stored memories."""
-    results = search_memories(query, project_path=project, limit=limit)
+@click.option("--semantic", "-s", is_flag=True, help="Use semantic (vector) search instead of full-text.")
+def search(query: str, project: str | None, limit: int, semantic: bool) -> None:
+    """Search stored memories (full-text or semantic)."""
+    results = search_memories(query, project_path=project, limit=limit, semantic=semantic)
     if not results:
         click.echo("No memories found.")
         return
     for r in results:
-        tags_raw = r.get("tags", "[]")
-        tags_list = json.loads(tags_raw) if isinstance(tags_raw, str) else tags_raw or []
-        tags = ", ".join(tags_list)
-        click.echo(f"\n[{r['type'].upper()}] {r['created_at']} | tags: {tags}")
+        tags = _fmt_tags(r.get("tags", "[]"))
+        score = f" | score: {r.get('score', 0):.3f}" if semantic else ""
+        click.echo(f"\n[{r['type'].upper()}] {r['created_at']} | tags: {tags}{score}")
         click.echo(f"  {r['content']}")
+
+
+@main.command()
+@click.argument("query")
+@click.option("--project", "-p", help="Filter by project path.")
+@click.option("--limit", "-n", default=10, help="Max results.")
+@click.option("--semantic", "-s", is_flag=True, help="Use semantic search.")
+def index(query: str, project: str | None, limit: int, semantic: bool) -> None:
+    """Progressive disclosure Layer 1: compact index (~50 tokens/result)."""
+    results = layer1_index(query, project_path=project, limit=limit, semantic=semantic)
+    if not results:
+        click.echo("No memories found.")
+        return
+    click.echo(f"Found {len(results)} memories. Use 'timeline <id>' or 'get <id>' for details.\n")
+    for r in results:
+        tags = _fmt_tags(r.get("tags", "[]"))
+        score = f" | score: {r.get('score', 0):.3f}" if semantic else ""
+        click.echo(f"[{r['id'][:8]}] [{r['type'].upper()}] {r['created_at']}{score}")
+        click.echo(f"  {r['preview']}")
+        click.echo(f"  tags: {tags}\n")
+
+
+@main.command("timeline")
+@click.argument("memory_id")
+@click.option("--window", "-w", default=2, help="Hours window around the memory.")
+def timeline_cmd(memory_id: str, window: int) -> None:
+    """Progressive disclosure Layer 2: chronological context around a memory."""
+    results = layer2_timeline(memory_id, window=window)
+    if not results:
+        click.echo("Memory not found or no timeline available.")
+        return
+    click.echo(f"Timeline around memory (±{window}h):\n")
+    for r in results:
+        marker = " ⭐" if r["id"] == memory_id else ""
+        tags = _fmt_tags(r.get("tags", "[]"))
+        click.echo(f"[{r['created_at']}] [{r['type'].upper()}]{marker}")
+        click.echo(f"  {r['content'][:200]}...")
+        click.echo(f"  tags: {tags}\n")
+
+
+@main.command("get")
+@click.argument("memory_id")
+def get_cmd(memory_id: str) -> None:
+    """Progressive disclosure Layer 3: full memory detail."""
+    mem = layer3_full(memory_id)
+    if not mem:
+        click.echo("Memory not found.")
+        return
+    tags = _fmt_tags(mem.get("tags", "[]"))
+    click.echo(f"ID: {mem['id']}")
+    click.echo(f"Type: {mem['type']}")
+    click.echo(f"Created: {mem['created_at']}")
+    click.echo(f"Project: {mem.get('project_path', 'n/a')}")
+    click.echo(f"Tags: {tags}")
+    click.echo(f"Access count: {mem.get('access_count', 0)}")
+    click.echo(f"\n{mem['content']}")
 
 
 @main.command()
@@ -62,9 +129,7 @@ def recent(project: str | None, limit: int) -> None:
         click.echo("No memories found.")
         return
     for r in results:
-        tags_raw = r.get("tags", "[]")
-        tags_list = json.loads(tags_raw) if isinstance(tags_raw, str) else tags_raw or []
-        tags = ", ".join(tags_list)
+        tags = _fmt_tags(r.get("tags", "[]"))
         click.echo(f"\n[{r['type'].upper()}] {r['created_at']} | tags: {tags}")
         click.echo(f"  {r['content']}")
 
@@ -102,7 +167,8 @@ def status() -> None:
         mem_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         obs_count = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
         sess_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-    click.echo(f"Memories: {mem_count} | Observations: {obs_count} | Sessions: {sess_count}")
+        vec_count = conn.execute("SELECT COUNT(*) FROM memory_vectors").fetchone()[0]
+    click.echo(f"Memories: {mem_count} | Vectors: {vec_count} | Observations: {obs_count} | Sessions: {sess_count}")
 
 
 @main.command()

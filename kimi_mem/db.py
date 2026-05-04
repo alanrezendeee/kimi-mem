@@ -6,7 +6,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import sqlite_vec
+
 from kimi_mem.config import get_db_path
+from kimi_mem.embeddings import get_embedding
 
 SCHEMA_SQL = """
 -- Sessions table
@@ -68,7 +71,12 @@ CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
     INSERT INTO memories_fts(rowid, content, tags)
     VALUES (new.rowid, new.content, new.tags);
 END;
-"""
+
+-- Virtual table for vector search (sqlite-vec)
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
+    embedding float[{dim}]
+);
+""".format(dim=1024)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -78,6 +86,10 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # Enable sqlite-vec extension
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
     return conn
 
 
@@ -147,10 +159,17 @@ class MemoryStore:
         session_id: str | None = None,
         project_path: str | None = None,
         tags: list[str] | None = None,
+        embedding: list[float] | None = None,
     ) -> str:
         mid = str(uuid.uuid4())
+        if embedding is None:
+            try:
+                embedding = get_embedding(content)
+            except Exception:
+                embedding = []
+
         with get_connection() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO memories (id, session_id, type, content, project_path, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     mid,
@@ -162,11 +181,19 @@ class MemoryStore:
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
+            if embedding:
+                conn.execute(
+                    "INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)",
+                    (cur.lastrowid, json.dumps(embedding)),
+                )
         return mid
 
     @staticmethod
-    def search(query: str, project_path: str | None = None, limit: int = 10) -> list[dict]:
-        """Full-text search over memories."""
+    def search(query: str, project_path: str | None = None, limit: int = 10, semantic: bool = False) -> list[dict]:
+        """Full-text or semantic search over memories."""
+        if semantic:
+            return MemoryStore._semantic_search(query, project_path=project_path, limit=limit)
+
         sql = """
             SELECT m.* FROM memories m
             JOIN memories_fts fts ON m.rowid = fts.rowid
@@ -184,6 +211,32 @@ class MemoryStore:
             return [dict(r) for r in rows]
 
     @staticmethod
+    def _semantic_search(query: str, project_path: str | None = None, limit: int = 10) -> list[dict]:
+        try:
+            query_vec = get_embedding(query)
+        except Exception:
+            return []
+
+        sql = """
+            SELECT m.*, distance AS score
+            FROM memories m
+            JOIN memory_vectors v ON m.rowid = v.rowid
+            WHERE v.embedding MATCH ?
+            AND k = ?
+        """
+        params: tuple = (json.dumps(query_vec), limit)
+
+        if project_path:
+            sql += " AND m.project_path = ?"
+            params += (project_path,)
+
+        sql += " ORDER BY score"
+
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
     def recent(project_path: str | None = None, limit: int = 10) -> list[dict]:
         sql = "SELECT * FROM memories WHERE 1=1"
         params: list = []
@@ -195,6 +248,32 @@ class MemoryStore:
 
         with get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def get_by_id(memory_id: str) -> dict | None:
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def get_timeline(memory_id: str, window: int = 2) -> list[dict]:
+        """Get memories chronologically around a given memory."""
+        with get_connection() as conn:
+            target = conn.execute(
+                "SELECT created_at FROM memories WHERE id = ?", (memory_id,)
+            ).fetchone()
+            if not target:
+                return []
+
+            rows = conn.execute(
+                """
+                SELECT * FROM memories
+                WHERE created_at BETWEEN datetime(?, ?) AND datetime(?, ?)
+                ORDER BY created_at
+                """,
+                (target["created_at"], f"-{window} hours", target["created_at"], f"+{window} hours"),
+            ).fetchall()
             return [dict(r) for r in rows]
 
     @staticmethod
