@@ -213,7 +213,9 @@ class MemoryStore:
                 JOIN memories_fts fts ON m.rowid = fts.rowid
                 WHERE memories_fts MATCH ?
             """
-        params: tuple = (query,)
+        # Escape query for FTS5 MATCH — wrap in double quotes to handle special chars
+        escaped_query = query.replace('"', '""')
+        params: tuple = (f'"{escaped_query}"',)
         if project_path:
             sql += " AND m.project_path = ?"
             params += (project_path,)
