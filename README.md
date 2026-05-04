@@ -11,11 +11,14 @@ Inspired by [`claude-mem`](https://github.com/thedotmack/claude-mem), built for 
 
 - 🔁 **Persistent Memory** — Context survives across Kimi sessions
 - 🪝 **Native Hooks** — Uses Kimi CLI's built-in lifecycle hooks (Beta)
-- 🔍 **Full-Text Search** — SQLite + FTS5 for fast memory retrieval
+- 🔍 **Full-Text + Semantic Search** — SQLite FTS5 + sqlite-vec for hybrid retrieval
+- 🎯 **Progressive Disclosure** — 3-layer retrieval: `index` → `timeline` → `get`
 - 🤖 **AI Summarization** — Automatically compresses sessions into actionable memories via Moonshot API
-- 🏷️ **Tagged & Typed** — Memories are categorized (pattern, decision, bugfix, architecture)
+- 🏷️ **Tagged & Typed** — Memories categorized as pattern, decision, bugfix, architecture
+- 🔒 **Privacy Tags** — `<private>` blocks are automatically excluded from search/storage
+- 🌐 **Web Viewer** — Local dashboard at `http://localhost:37777`
 - 🌙 **Token-Efficient** — Injects only the most relevant memories, respects context limits
-- ⚡ **Zero External Services** — SQLite is all you need; vector search optional
+- ⚡ **Zero External Services** — SQLite is all you need; vector search included
 
 ---
 
@@ -24,14 +27,18 @@ Inspired by [`claude-mem`](https://github.com/thedotmack/claude-mem), built for 
 ### 1. Install the package
 
 ```bash
-# Clone or download this repo
+pip install kimi-mem
+
+# With web viewer support
+pip install "kimi-mem[web]"
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/theretech/kimi-mem.git
 cd kimi-mem
-
-# Install in editable mode (recommended for now)
-pip install -e .
-
-# Or install with vector search support
-pip install -e ".[vector]"
+pip install -e ".[web]"
 ```
 
 ### 2. Install hooks into Kimi CLI
@@ -64,18 +71,29 @@ Once installed, kimi-mem works in the background:
 2. **Use tools (ReadFile, Shell, etc.)** → observations are captured silently
 3. **End the session** → session is summarized and memories are stored
 
-### Manual commands
+### CLI Commands
 
 ```bash
-# Search your memory
+# Search your memory (full-text)
 kimi-mem search "authentication bug"
 
-# See recent memories
+# Semantic search (vector)
+kimi-mem search "how to handle jwt errors" --semantic
+
+# Progressive disclosure
+kimi-mem index "database migration"           # Layer 1: compact index
+kimi-mem timeline <id>                        # Layer 2: chronological context
+kimi-mem get <id>                             # Layer 3: full detail
+
+# Recent memories
 kimi-mem recent --limit 5
 
 # Add a memory manually
 kimi-mem add "Use jwt.ParseWithClaims for custom claims" \
   --type pattern --tag go --tag jwt
+
+# Start web viewer
+kimi-mem serve
 
 # Check status
 kimi-mem status
@@ -88,13 +106,14 @@ kimi-mem status
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐
 │  Kimi CLI   │────▶│   Hooks     │────▶│  kimi-mem core  │
-│  (sessão)   │     │ (config.toml)│     │  (Python + SQLite)│
+│  (session)  │     │ (config.toml)│     │  (Python + SQLite)│
 └─────────────┘     └─────────────┘     └─────────────────┘
                                                 │
                        ┌────────────────────────┘
                        ▼
               ┌─────────────────┐
               │  SQLite + FTS5  │
+              │  + sqlite-vec   │
               │  (memories +    │
               │   observations) │
               └─────────────────┘
@@ -108,6 +127,27 @@ kimi-mem status
 | `PostToolUse` | Captures tool calls/outputs as observations |
 | `Stop` / `SessionEnd` | Summarizes session with AI → stores compressed memories |
 
+### Progressive Disclosure (3 layers)
+
+Inspired by `claude-mem`, kimi-mem uses token-efficient layered retrieval:
+
+| Layer | Command | Tokens | Purpose |
+|-------|---------|--------|---------|
+| L1 | `kimi-mem index <query>` | ~50-100/result | Compact preview with IDs |
+| L2 | `kimi-mem timeline <id>` | ~200-500/result | Chronological context around a memory |
+| L3 | `kimi-mem get <id>` | ~500-1000/result | Full content + metadata |
+
+---
+
+## 🔒 Privacy
+
+kimi-mem respects your privacy:
+
+- **`<private>...</private>`** tags in any content are automatically detected and excluded from search, vector index, and session injection
+- Private memories are still stored (for your reference) but never retrieved automatically
+- Heuristics detect secrets, passwords, and API keys in observations
+- Use `--include-private` to explicitly search private memories
+
 ---
 
 ## ⚙️ Configuration
@@ -120,37 +160,44 @@ Environment variables:
 | `KIMI_MEM_DATA_DIR` | Where to store the SQLite DB | `~/.kimi-mem` |
 | `KIMI_MEM_DB_PATH` | Direct path to SQLite file | `~/.kimi-mem/memory.db` |
 | `KIMI_MEM_MODEL` | Model for summarization | `moonshot-v1-8k` |
-| `KIMI_MEM_PROJECT` | Override project path detection | `cwd` |
+| `KIMI_MEM_EMBEDDING_MODEL` | Model for embeddings | `moonshot-v1-embedding` |
+| `KIMI_MEM_EMBEDDING_DIM` | Embedding dimension | `1024` |
 
 ---
 
 ## 🛠️ Development
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
+# Setup
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,web]"
 
 # Run tests
 pytest
 
 # Lint
 ruff check .
+
+# Format
+ruff format .
 ```
 
 ---
 
 ## 📋 Roadmap
 
-- [x] SQLite + FTS5 full-text search
-- [x] Native Kimi hooks integration
+- [x] SQLite + FTS5 persistent storage
+- [x] Native Kimi CLI hooks
 - [x] AI-powered session summarization
-- [x] Manual memory management CLI
-- [ ] **Vector embeddings** (`sqlite-vec` for semantic search)
-- [ ] **Progressive disclosure** (3-layer retrieval like claude-mem)
-- [ ] **Web viewer UI** (local HTTP dashboard)
-- [ ] **Memory privacy tags** (`<private>` exclusion)
-- [ ] **Cross-project memory linking**
-- [ ] **PyPI publication** (`pip install kimi-mem`)
+- [x] Semantic vector search (sqlite-vec)
+- [x] Progressive disclosure (3-layer retrieval)
+- [x] Web viewer dashboard
+- [x] Privacy tags (`<private>` exclusion)
+- [ ] PyPI publication
+- [ ] Cross-project memory linking
+- [ ] Memory import/export
+- [ ] Team/shared memory
 
 ---
 
