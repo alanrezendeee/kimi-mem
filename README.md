@@ -1,5 +1,10 @@
 # 🧠 kimi-mem
 
+[![PyPI](https://img.shields.io/pypi/v/kimi-mem)](https://pypi.org/project/kimi-mem/)
+[![Python](https://img.shields.io/pypi/pyversions/kimi-mem)](https://pypi.org/project/kimi-mem/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](tests/)
+
 > Persistent memory system for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli).  
 > Remember context across sessions. Never repeat yourself.
 
