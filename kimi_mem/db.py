@@ -1,0 +1,206 @@
+"""SQLite database layer with FTS5 full-text search."""
+
+import json
+import sqlite3
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from kimi_mem.config import get_db_path
+
+SCHEMA_SQL = """
+-- Sessions table
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    project_path TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    summary TEXT,
+    token_count INTEGER
+);
+
+-- Observations: individual tool uses, decisions, errors
+CREATE TABLE IF NOT EXISTS observations (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    type TEXT NOT NULL,        -- 'tool_use', 'decision', 'error', 'note'
+    tool_name TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+-- Memories: compressed/summarized knowledge extracted from sessions
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    type TEXT NOT NULL,        -- 'pattern', 'decision', 'bugfix', 'architecture', 'config'
+    content TEXT NOT NULL,
+    project_path TEXT,
+    tags TEXT,                 -- JSON list
+    created_at TEXT,
+    access_count INTEGER DEFAULT 0,
+    last_accessed TEXT
+);
+
+-- FTS5 virtual table for full-text search over memories
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    content,
+    tags,
+    content_rowid=rowid,
+    content='memories'
+);
+
+-- Triggers to keep FTS index in sync
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, content, tags)
+    VALUES (new.rowid, new.content, new.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+    VALUES ('delete', old.rowid, old.content, old.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+    INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+    VALUES ('delete', old.rowid, old.content, old.tags);
+    INSERT INTO memories_fts(rowid, content, tags)
+    VALUES (new.rowid, new.content, new.tags);
+END;
+"""
+
+
+def get_connection() -> sqlite3.Connection:
+    """Return a database connection with row factory."""
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def init_db() -> None:
+    """Initialize the database schema."""
+    with get_connection() as conn:
+        conn.executescript(SCHEMA_SQL)
+
+
+class SessionStore:
+    """Store and retrieve sessions."""
+
+    @staticmethod
+    def start(project_path: str | None = None) -> str:
+        sid = str(uuid.uuid4())
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO sessions (id, project_path, started_at) VALUES (?, ?, ?)",
+                (sid, project_path or "", datetime.now(timezone.utc).isoformat()),
+            )
+        return sid
+
+    @staticmethod
+    def end(session_id: str, summary: str | None = None, token_count: int = 0) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE sessions SET ended_at = ?, summary = ?, token_count = ? WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), summary or "", token_count, session_id),
+            )
+
+
+class ObservationStore:
+    """Store raw observations from tool usage."""
+
+    @staticmethod
+    def add(
+        session_id: str,
+        obs_type: str,
+        content: str,
+        tool_name: str | None = None,
+    ) -> str:
+        oid = str(uuid.uuid4())
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO observations (id, session_id, type, tool_name, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (oid, session_id, obs_type, tool_name or "", content, datetime.now(timezone.utc).isoformat()),
+            )
+        return oid
+
+    @staticmethod
+    def get_for_session(session_id: str) -> list[dict]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM observations WHERE session_id = ? ORDER BY created_at",
+                (session_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+
+class MemoryStore:
+    """Store compressed memories and search them."""
+
+    @staticmethod
+    def add(
+        content: str,
+        mem_type: str = "pattern",
+        session_id: str | None = None,
+        project_path: str | None = None,
+        tags: list[str] | None = None,
+    ) -> str:
+        mid = str(uuid.uuid4())
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO memories (id, session_id, type, content, project_path, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    mid,
+                    session_id or "",
+                    mem_type,
+                    content,
+                    project_path or "",
+                    json.dumps(tags or []),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        return mid
+
+    @staticmethod
+    def search(query: str, project_path: str | None = None, limit: int = 10) -> list[dict]:
+        """Full-text search over memories."""
+        sql = """
+            SELECT m.* FROM memories m
+            JOIN memories_fts fts ON m.rowid = fts.rowid
+            WHERE memories_fts MATCH ?
+        """
+        params: tuple = (query,)
+        if project_path:
+            sql += " AND m.project_path = ?"
+            params += (project_path,)
+        sql += " ORDER BY rank LIMIT ?"
+        params += (limit,)
+
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def recent(project_path: str | None = None, limit: int = 10) -> list[dict]:
+        sql = "SELECT * FROM memories WHERE 1=1"
+        params: list = []
+        if project_path:
+            sql += " AND project_path = ?"
+            params.append(project_path)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def bump_access(memory_id: str) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE memories SET access_count = access_count + 1, last_accessed = ? WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), memory_id),
+            )
