@@ -224,4 +224,15 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
+## ☕ Support
+
+If you find kimi-mem useful, consider supporting the project:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/alanrezendeee)
+
+**PIX (Brazil):**  
+`54802231000148` — THE RETECH LTDA - EPP
+
+---
+
 Built with 🌙 by [The Retech](https://github.com/theretech) and friends.
