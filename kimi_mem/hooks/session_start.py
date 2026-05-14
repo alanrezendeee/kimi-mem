@@ -30,7 +30,8 @@ def main() -> None:
     injection = format_for_injection(memories)
 
     # Write to a file that can be referenced by the agent
-    mem_dir = Path(".kimi")
+    # Use absolute path to ensure it's found regardless of CWD
+    mem_dir = Path.home() / ".kimi"
     mem_dir.mkdir(exist_ok=True)
     mem_file = mem_dir / "session-memory.md"
     mem_file.write_text(injection, encoding="utf-8")

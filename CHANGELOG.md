@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-05-14
+
+### Fixed
+
+- `session_start` hook: use absolute path (`~/.kimi/session-memory.md`) instead of relative path to avoid missing memory file on session restart
+- `format_for_injection`: properly parse JSON-encoded tags from SQLite to prevent broken tag output in session memory
+
 ## [0.1.2] - 2026-05-04
 
 ### Fixed
