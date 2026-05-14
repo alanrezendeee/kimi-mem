@@ -1,5 +1,6 @@
 """Search and retrieval utilities for memories — with progressive disclosure."""
 
+import json
 from kimi_mem.db import MemoryStore
 from kimi_mem.config import MAX_MEMORIES_INJECT, MAX_INJECTION_TOKENS
 
@@ -16,7 +17,13 @@ def format_for_injection(memories: list[dict]) -> str:
         if total_tokens + estimated_tokens > MAX_INJECTION_TOKENS:
             break
 
-        tag_str = ", ".join(mem.get("tags", []) or [])
+        tags = mem.get("tags", []) or []
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except json.JSONDecodeError:
+                tags = [tags]
+        tag_str = ", ".join(tags)
         lines.append(f"## [{mem['type'].upper()}] {tag_str}")
         lines.append(f"{content}\n")
         total_tokens += estimated_tokens
