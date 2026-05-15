@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-15
+
+### Added
+
+- **Setup hook**: validates Python path, DB connectivity, sqlite-vec, hooks config, and MCP registration on Kimi CLI startup
+- **`kimi-mem doctor` CLI command**: comprehensive health check for the entire installation
+- **MCP server tests**: 8 new tests covering all 6 MCP tools (`kimi_mem_search`, `kimi_mem_index`, `kimi_mem_timeline`, `kimi_mem_get`, `kimi_mem_recent`, `kimi_mem_add`)
+- **ROADMAP.md**: full audit report with feature parity matrix against claude-mem
+
+### Fixed
+
+- **`installer.py` uninstall**: never actually removed hooks because it looked for `"kimi-mem hooks"` and `"Generated automatically"` on the same line (they were on separate lines)
+- **`installer.py` Python executable**: used system Python (`/opt/homebrew/bin/python3`) instead of the venv where kimi-mem is installed
+- **`db.py` timeline query**: `MemoryStore.get_timeline()` failed to return results because it compared raw ISO 8601 timestamps with `datetime()` output in different string formats
+- **`privacy.py`**: removed duplicate identical regex definitions (`PRIVATE_TAG_RE` and `PRIVATE_INDICATOR_RE`)
+- **`embeddings.py`**: removed duplicate `TARGET_DIM` declaration
+- **`session_start.py`**: added documentation comment about potential context double-injection (writes `session-memory.md` AND returns `additionalContext`)
+
 ## [0.2.0] - 2026-05-15
 
 ### Added
