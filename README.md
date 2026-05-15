@@ -15,11 +15,12 @@ Inspired by [`claude-mem`](https://github.com/thedotmack/claude-mem), built for 
 ## ✨ Features
 
 - 🔁 **Persistent Memory** — Context survives across Kimi sessions
-- 🪝 **Native Hooks** — Uses Kimi CLI's built-in lifecycle hooks (Beta)
+- 🪝 **Native Hooks** — Uses Kimi CLI's built-in lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`, `SessionEnd`)
+- 🤖 **MCP Tools** — 6 auto-search tools the agent can invoke during conversations
 - 🔍 **Full-Text + Semantic Search** — SQLite FTS5 + sqlite-vec for hybrid retrieval
 - 🎯 **Progressive Disclosure** — 3-layer retrieval: `index` → `timeline` → `get`
-- 🤖 **AI Summarization** — Automatically compresses sessions into actionable memories via Moonshot API
-- 🏷️ **Tagged & Typed** — Memories categorized as pattern, decision, bugfix, architecture
+- 🧠 **AI Summarization** — Automatically compresses sessions into actionable memories via Moonshot API
+- 🏷️ **Tagged & Typed** — Memories categorized as pattern, decision, bugfix, architecture, note
 - 🔒 **Privacy Tags** — `<private>` blocks are automatically excluded from search/storage
 - 🌐 **Web Viewer** — Local dashboard at `http://localhost:37777`
 - 🌙 **Token-Efficient** — Injects only the most relevant memories, respects context limits
@@ -64,11 +65,21 @@ Then install the hooks:
 kimi-mem install
 ```
 
-This appends hook entries to your `~/.config/kimi/config.toml`.
+This appends hook entries to your `~/.kimi/config.toml`.
 
 > 🔄 **Restart Kimi Code CLI** for the hooks to take effect.
 
-### 3. Set your API key (optional, for AI summarization)
+### 3. Install MCP server (optional, for auto-search)
+
+```bash
+kimi-mem mcp-install
+```
+
+This registers the `kimi-mem` MCP server so the **agent can search memories automatically** during conversations.
+
+> 🔄 **Restart Kimi Code CLI** after installing MCP.
+
+### 4. Set your API key (optional, for AI summarization)
 
 ```bash
 export KIMI_API_KEY="your-moonshot-api-key"
@@ -84,9 +95,14 @@ If not set, kimi-mem still works — it just won't auto-summarize sessions with 
 
 Once installed, kimi-mem works in the background:
 
-1. **Start a Kimi session** → relevant memories are injected into `.kimi/session-memory.md`
-2. **Use tools (ReadFile, Shell, etc.)** → observations are captured silently
-3. **End the session** → session is summarized and memories are stored
+1. **Start a Kimi session** → relevant memories are injected into context via `additionalContext`
+2. **Type a prompt** → your question is saved to the session history
+3. **Use tools (ReadFile, Shell, etc.)** → observations are captured silently
+4. **End the session** → session is summarized with AI and memories are stored
+
+The agent can also search memories on its own by calling MCP tools:
+
+> _"What was that JWT fix we did last week?"_ → Agent auto-invokes `kimi_mem_search`
 
 ### CLI Commands
 
@@ -114,6 +130,9 @@ kimi-mem serve
 
 # Check status
 kimi-mem status
+
+# MCP server (stdio transport)
+kimi-mem mcp
 ```
 
 ---
@@ -123,26 +142,44 @@ kimi-mem status
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐
 │  Kimi CLI   │────▶│   Hooks     │────▶│  kimi-mem core  │
-│  (session)  │     │ (config.toml)│     │  (Python + SQLite)│
+│  (session)  │     │ (stdin JSON)│     │  (Python + SQLite)│
 └─────────────┘     └─────────────┘     └─────────────────┘
-                                                │
-                       ┌────────────────────────┘
-                       ▼
-              ┌─────────────────┐
-              │  SQLite + FTS5  │
-              │  + sqlite-vec   │
-              │  (memories +    │
-              │   observations) │
-              └─────────────────┘
+       │                                            │
+       │         ┌─────────────────┐                │
+       │         │  MCP Server     │◄───────────────┘
+       │         │  (6 tools)      │
+       │         └─────────────────┘
+       │
+       ▼
+┌─────────────────┐
+│  SQLite + FTS5  │
+│  + sqlite-vec   │
+│  (sessions +    │
+│   prompts +     │
+│   observations +│
+│   memories)     │
+└─────────────────┘
 ```
 
 ### Hooks used
 
 | Event | What it does |
 |-------|-------------|
-| `SessionStart` | Retrieves relevant memories → writes `.kimi/session-memory.md` |
-| `PostToolUse` | Captures tool calls/outputs as observations |
+| `SessionStart` | Creates session in DB + retrieves relevant memories → injects via `additionalContext` |
+| `UserPromptSubmit` | Saves the user's prompt to the session history |
+| `PostToolUse` | Captures tool calls/outputs as observations (skips low-value tools) |
 | `Stop` / `SessionEnd` | Summarizes session with AI → stores compressed memories |
+
+### MCP Tools
+
+| Tool | Purpose |
+|------|---------|
+| `kimi_mem_search` | Full-text or semantic search over memories |
+| `kimi_mem_index` | Layer 1: compact index (~50 tokens/result) |
+| `kimi_mem_timeline` | Layer 2: chronological context around a memory ID |
+| `kimi_mem_get` | Layer 3: full memory detail by ID |
+| `kimi_mem_recent` | List recent memories |
+| `kimi_mem_add` | Manually add a memory |
 
 ### Progressive Disclosure (3 layers)
 
@@ -162,7 +199,7 @@ kimi-mem respects your privacy:
 
 - **`<private>...</private>`** tags in any content are automatically detected and excluded from search, vector index, and session injection
 - Private memories are still stored (for your reference) but never retrieved automatically
-- Heuristics detect secrets, passwords, and API keys in observations
+- Heuristics detect secrets, passwords, and API keys in observations (without blocking library names like `jsonwebtoken`)
 - Use `--include-private` to explicitly search private memories
 
 ---
@@ -205,13 +242,14 @@ ruff format .
 ## 📋 Roadmap
 
 - [x] SQLite + FTS5 persistent storage
-- [x] Native Kimi CLI hooks
+- [x] Native Kimi CLI hooks (5 lifecycle hooks)
 - [x] AI-powered session summarization
 - [x] Semantic vector search (sqlite-vec)
 - [x] Progressive disclosure (3-layer retrieval)
 - [x] Web viewer dashboard
 - [x] Privacy tags (`<private>` exclusion)
-- [ ] PyPI publication
+- [x] MCP server for auto agent search
+- [x] PyPI publication
 - [ ] Cross-project memory linking
 - [ ] Memory import/export
 - [ ] Team/shared memory
