@@ -21,6 +21,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     token_count INTEGER
 );
 
+-- User prompts: what the user asked during the session
+CREATE TABLE IF NOT EXISTS user_prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    prompt_number INTEGER DEFAULT 1,
+    created_at TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
 -- Observations: individual tool uses, decisions, errors
 CREATE TABLE IF NOT EXISTS observations (
     id TEXT PRIMARY KEY,
@@ -111,6 +121,42 @@ class SessionStore:
                 (sid, project_path or "", datetime.now(timezone.utc).isoformat()),
             )
         return sid
+
+    @staticmethod
+    def start_or_get(session_id: str, project_path: str | None = None) -> str:
+        """Idempotent session creation — same session_id always maps to same row."""
+        with get_connection() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO sessions (id, project_path, started_at)
+                   VALUES (?, ?, ?)""",
+                (session_id, project_path or "", datetime.now(timezone.utc).isoformat()),
+            )
+        return session_id
+
+    @staticmethod
+    def save_prompt(session_id: str, prompt: str) -> None:
+        """Save a user prompt for the session."""
+        with get_connection() as conn:
+            # Count existing prompts for this session to get prompt_number
+            row = conn.execute(
+                "SELECT COUNT(*) FROM user_prompts WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            prompt_number = (row[0] if row else 0) + 1
+            conn.execute(
+                "INSERT INTO user_prompts (session_id, prompt, prompt_number, created_at) VALUES (?, ?, ?, ?)",
+                (session_id, prompt, prompt_number, datetime.now(timezone.utc).isoformat()),
+            )
+
+    @staticmethod
+    def get_prompts(session_id: str) -> list[dict]:
+        """Get all user prompts for a session."""
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM user_prompts WHERE session_id = ? ORDER BY created_at",
+                (session_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     @staticmethod
     def end(session_id: str, summary: str | None = None, token_count: int = 0) -> None:

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-15
+
+### Added
+
+- **MCP Server**: 6 tools (`kimi_mem_search`, `kimi_mem_index`, `kimi_mem_timeline`, `kimi_mem_get`, `kimi_mem_recent`, `kimi_mem_add`) for auto-search by the agent
+- `UserPromptSubmit` hook: captures user prompts and creates sessions idempotently
+- `kimi-mem mcp-install` CLI command to register MCP server with Kimi CLI
+- `kimi-mem mcp` CLI command to run the MCP server (stdio transport)
+- `debug.py` hook for troubleshooting hook data from Kimi CLI
+- `kimi_mem/hooks/common.py`: shared utilities for reading stdin JSON and writing structured output
+
+### Changed
+
+- **Complete hook rewrite** to use Kimi CLI's native stdin JSON format (discovered from `kimi_cli/hooks/runner.py` source)
+- `SessionStart`: now creates sessions in DB and returns `additionalContext` via stdout JSON for native context injection
+- `PostToolUse`: now reads real `tool_name`, `tool_input`, `tool_output` from stdin; filters low-value tools (Read, Shell, etc.)
+- `SessionEnd/Stop`: now fetches observations + prompts and runs AI summarization end-to-end
+- Database schema: added `user_prompts` table for storing user questions
+- Privacy filter: improved regex heuristics to avoid false positives (e.g. `jsonwebtoken` no longer blocked)
+- Version bump to 0.2.0
+
+### Fixed
+
+- Hooks no longer rely on non-existent environment variables (`KIMI_HOOK_TOOL_NAME`, etc.)
+- Session ID now correctly persists across hooks using Kimi's native `session_id`
+- Observations are now actually saved (was 0 before due to wrong input format)
+
 ## [0.1.4] - 2026-05-14
 
 ### Fixed

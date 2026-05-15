@@ -15,6 +15,10 @@ event = "SessionStart"
 command = "{python} -m kimi_mem.hooks.session_start"
 
 [[hooks]]
+event = "UserPromptSubmit"
+command = "{python} -m kimi_mem.hooks.user_prompt_submit"
+
+[[hooks]]
 event = "PostToolUse"
 command = "{python} -m kimi_mem.hooks.post_tool_use"
 

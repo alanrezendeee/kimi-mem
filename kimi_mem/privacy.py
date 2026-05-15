@@ -24,15 +24,23 @@ def is_private_observation(content: str, tool_name: str | None = None) -> bool:
     """Determine if an observation should be excluded from storage."""
     if contains_private(content):
         return True
-    # Also exclude common secret patterns
+
+    # Exclude common secret patterns, but avoid false positives
+    # on library names (e.g. "jsonwebtoken", "tokenizer", "csrf_token")
     lower = content.lower()
-    secret_indicators = [
-        "password", "secret", "api_key", "apikey", "token",
-        "private_key", "ssh_key", "aws_secret", "credential",
+    secret_patterns = [
+        r"password\s*[=:]\s*\S+",
+        r"api[_-]?key\s*[=:]\s*\S+",
+        r"secret\s*[=:]\s*\S+",
+        r"private[_-]?key\s*[=:]\s*\S+",
+        r"ssh[_-]?key\s*[=:]\s*\S+",
+        r"aws[_-]?secret\s*[=:]\s*\S+",
+        r"credential\s*[=:]\s*\S+",
+        r"token\s*[=:]\s*[a-zA-Z0-9_\-]{10,}",  # token followed by actual value
+        r"bearer\s+[a-zA-Z0-9_\-]{10,}",
+        r"BEGIN\s+(RSA\s+)?PRIVATE\s+KEY",
     ]
-    # Only trigger if combined with actual values (not just discussions)
-    # Simple heuristic: contains '=' or ':' near the indicator
-    if any(ind in lower for ind in secret_indicators):
-        if "=" in content or ":" in content or "BEGIN" in content:
+    for pattern in secret_patterns:
+        if re.search(pattern, lower):
             return True
     return False

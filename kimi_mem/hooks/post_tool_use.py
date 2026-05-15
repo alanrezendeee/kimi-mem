@@ -1,35 +1,49 @@
 #!/usr/bin/env python3
 """Hook: PostToolUse — capture tool usage observations."""
 
-import os
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from kimi_mem.db import init_db, ObservationStore
+from kimi_mem.db import init_db, ObservationStore, SessionStore
+from kimi_mem.privacy import strip_private
+from kimi_mem.hooks.common import (
+    read_stdin,
+    get_project_path,
+    get_session_id,
+    is_skippable_tool,
+)
 
 
 def main() -> None:
     init_db()
+    data = read_stdin()
 
-    # Kimi hooks pass context via environment variables (documented in hooks beta)
-    # If not available, we try to read from stdin or env
-    tool_name = os.environ.get("KIMI_HOOK_TOOL_NAME", "unknown")
-    tool_input = os.environ.get("KIMI_HOOK_TOOL_INPUT", "")
-    tool_output = os.environ.get("KIMI_HOOK_TOOL_OUTPUT", "")
-    session_id = os.environ.get("KIMI_MEM_SESSION_ID", "")
-
-    if not session_id:
-        # Try to read from a session file if available
-        session_file = Path(".kimi") / ".kimi-mem-session"
-        if session_file.exists():
-            session_id = session_file.read_text().strip()
+    session_id = get_session_id(data)
+    tool_name = data.get("tool_name", "unknown")
+    tool_input = data.get("tool_input", {})
+    tool_output = data.get("tool_output", "")
 
     if not session_id:
         return
 
-    content = f"Tool: {tool_name}\nInput: {tool_input[:1000]}\nOutput: {tool_output[:2000]}"
+    # Skip low-value tools (same logic as claude-mem)
+    if is_skippable_tool(tool_name):
+        return
+
+    # Ensure session exists (create if missing, for robustness)
+    project_path = get_project_path(data)
+    SessionStore.start_or_get(session_id, project_path=project_path)
+
+    # Strip privacy tags from input/output
+    input_str = json.dumps(tool_input) if isinstance(tool_input, dict) else str(tool_input)
+    input_str = strip_private(input_str)
+    output_str = strip_private(str(tool_output))
+
+    content = f"Tool: {tool_name}\nInput: {input_str[:1000]}\nOutput: {output_str[:2000]}"
+
     ObservationStore.add(
         session_id=session_id,
         obs_type="tool_use",
