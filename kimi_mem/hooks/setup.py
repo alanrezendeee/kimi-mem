@@ -2,7 +2,6 @@
 """Hook: Setup — verify kimi-mem installation health on Kimi CLI startup."""
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
