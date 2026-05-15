@@ -8,7 +8,7 @@ import click
 
 from kimi_mem import __version__
 from kimi_mem.db import init_db, MemoryStore
-from kimi_mem.installer import install_hooks, uninstall_hooks
+from kimi_mem.installer import install_hooks, uninstall_hooks, get_python_executable
 from kimi_mem.search import (
     search_memories,
     get_recent_memories,
@@ -194,6 +194,52 @@ def serve(host: str, port: int) -> None:
         sys.exit(1)
     click.echo(f"🌐 Starting kimi-mem viewer at http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
+
+
+@main.command("mcp")
+def mcp_cmd() -> None:
+    """Run the MCP server (stdio transport for Kimi CLI)."""
+    import asyncio
+    from kimi_mem.mcp_server import main as mcp_main
+    asyncio.run(mcp_main())
+
+
+@main.command("mcp-install")
+@click.option("--dry-run", is_flag=True, help="Show what would be done without changing files.")
+def mcp_install(dry_run: bool) -> None:
+    """Install kimi-mem as an MCP server in Kimi CLI."""
+    import json
+    from pathlib import Path
+
+    mcp_file = Path.home() / ".kimi" / "mcp.json"
+    config = {"mcpServers": {}}
+    if mcp_file.exists():
+        try:
+            config = json.loads(mcp_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+
+    python = get_python_executable()
+    server_config = {
+        "command": python,
+        "args": ["-m", "kimi_mem.mcp_server"],
+    }
+
+    if "mcpServers" not in config:
+        config["mcpServers"] = {}
+
+    config["mcpServers"]["kimi-mem"] = server_config
+
+    if dry_run:
+        click.echo("--- Dry run: would write ---")
+        click.echo(json.dumps(config, indent=2, ensure_ascii=False))
+        return
+
+    mcp_file.parent.mkdir(parents=True, exist_ok=True)
+    mcp_file.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+    click.echo(f"✅ Installed kimi-mem MCP server to {mcp_file}")
+    click.echo("🔄 Restart Kimi Code CLI for changes to take effect.")
+    click.echo("   After restart, the agent can auto-search memories via MCP tools.")
 
 
 if __name__ == "__main__":

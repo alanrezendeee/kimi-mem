@@ -1,24 +1,34 @@
 #!/usr/bin/env python3
-"""Hook: SessionStart — inject relevant memories into the session."""
+"""Hook: SessionStart — create session and inject relevant memories into context."""
 
 import os
 import sys
 from pathlib import Path
 
-# Allow running without package install
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from kimi_mem.db import init_db, MemoryStore
+from kimi_mem.db import init_db, SessionStore, MemoryStore
 from kimi_mem.search import format_for_injection
+from kimi_mem.hooks.common import read_stdin, write_output, get_project_path, get_session_id
 
 
 def main() -> None:
     init_db()
-    project_path = os.environ.get("KIMI_MEM_PROJECT", os.getcwd())
+    data = read_stdin()
 
-    # Search for memories relevant to current project
+    session_id = get_session_id(data)
+    project_path = get_project_path(data)
+    source = data.get("source", "startup")
+
+    if not session_id:
+        # Nothing we can do without a session id
+        return
+
+    # Create or get session (idempotent — same as claude-mem)
+    SessionStore.start_or_get(session_id, project_path=project_path)
+
+    # Retrieve relevant memories for this project
     memories = MemoryStore.recent(project_path=project_path, limit=5)
-
     if not memories:
         # Fallback: search by project name as keyword
         project_name = Path(project_path).name
@@ -29,17 +39,23 @@ def main() -> None:
 
     injection = format_for_injection(memories)
 
-    # Write to a file that can be referenced by the agent
-    # Use absolute path to ensure it's found regardless of CWD
+    # Write to session-memory.md for the skill/agent to read
     mem_dir = Path.home() / ".kimi"
     mem_dir.mkdir(exist_ok=True)
     mem_file = mem_dir / "session-memory.md"
     mem_file.write_text(injection, encoding="utf-8")
 
-    # Also print a concise summary for the hook output
-    print(f"💾 Injected {len(memories)} memories into {mem_file}")
-    for m in memories:
-        print(f"  • [{m['type']}] {m['content'][:80]}...")
+    # Return structured context for Kimi CLI to inject directly
+    # Kimi CLI parses stdout JSON and uses hookSpecificOutput.additionalContext
+    write_output({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": injection,
+        }
+    })
+
+    # Also print a concise summary for any logs
+    print(f"💾 Injected {len(memories)} memories into context", file=sys.stderr)
 
 
 if __name__ == "__main__":
