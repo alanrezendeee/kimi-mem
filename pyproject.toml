@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kimi-mem"
-version = "0.2.1"
+version = "0.2.3"
 description = "Persistent memory system for Kimi Code CLI — remember context across sessions"
 readme = "README.md"
 license = {text = "MIT"}
