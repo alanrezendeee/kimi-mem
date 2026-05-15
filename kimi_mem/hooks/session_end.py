@@ -17,7 +17,7 @@ def main() -> None:
 
     session_id = get_session_id(data)
     project_path = get_project_path(data)
-    reason = data.get("reason", "")
+    _reason = data.get("reason", "")
 
     if not session_id:
         print("⚠️  No session ID found. Skipping summarization.", file=sys.stderr)

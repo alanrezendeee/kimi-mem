@@ -4,7 +4,6 @@
 import json
 import os
 import sys
-from pathlib import Path
 
 # Tools to skip (low-value noise, same as claude-mem)
 SKIP_TOOLS = {

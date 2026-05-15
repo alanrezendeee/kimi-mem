@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Hook: SessionStart — create session and inject relevant memories into context."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -18,7 +17,7 @@ def main() -> None:
 
     session_id = get_session_id(data)
     project_path = get_project_path(data)
-    source = data.get("source", "startup")
+    _source = data.get("source", "startup")
 
     if not session_id:
         # Nothing we can do without a session id
