@@ -6,12 +6,11 @@ import httpx
 
 MOONSHOT_API_BASE = os.environ.get("MOONSHOT_API_BASE", "https://api.moonshot.ai/v1")
 EMBEDDING_MODEL = os.environ.get("KIMI_MEM_EMBEDDING_MODEL", "moonshot-v1-embedding")
-EMBEDDING_DIM = int(os.environ.get("KIMI_MEM_EMBEDDING_DIM", "1024"))
+TARGET_DIM = int(os.environ.get("KIMI_MEM_EMBEDDING_DIM", "1024"))
 
 # Simple local fallback: Bag-of-Characters hash embedding (deterministic, zero-deps)
 # Not semantically meaningful but allows vector search to work without API key.
 LOCAL_DIM = 384
-TARGET_DIM = int(os.environ.get("KIMI_MEM_EMBEDDING_DIM", "1024"))
 
 
 def _pad_embedding(vec: list[float], target_dim: int = TARGET_DIM) -> list[float]:
@@ -24,7 +23,7 @@ def _pad_embedding(vec: list[float], target_dim: int = TARGET_DIM) -> list[float
 
 
 def get_embedding(text: str, local_fallback: bool = True) -> list[float]:
-    """Return embedding vector for text, padded to TARGET_DIM."""
+    """Return embedding vector for text, padded to target dimension."""
     api_key = os.environ.get("MOONSHOT_API_KEY") or os.environ.get("KIMI_API_KEY")
     if api_key:
         vec = _moonshot_embedding(text, api_key)

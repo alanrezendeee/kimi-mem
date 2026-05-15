@@ -3,14 +3,13 @@
 import re
 
 PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
-PRIVATE_INDICATOR_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 
 
 def contains_private(content: str) -> bool:
     """Check if content contains <private> tags."""
     if not content:
         return False
-    return bool(PRIVATE_INDICATOR_RE.search(content))
+    return bool(PRIVATE_TAG_RE.search(content))
 
 
 def strip_private(content: str) -> str:

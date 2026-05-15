@@ -341,7 +341,7 @@ class MemoryStore:
             rows = conn.execute(
                 """
                 SELECT * FROM memories
-                WHERE created_at BETWEEN datetime(?, ?) AND datetime(?, ?)
+                WHERE datetime(created_at) BETWEEN datetime(?, ?) AND datetime(?, ?)
                 ORDER BY created_at
                 """,
                 (target["created_at"], f"-{window} hours", target["created_at"], f"+{window} hours"),

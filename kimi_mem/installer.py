@@ -11,6 +11,10 @@ HOOKS_CONFIG = """
 # Generated automatically. Safe to edit or remove.
 
 [[hooks]]
+event = "Setup"
+command = "{python} -m kimi_mem.hooks.setup"
+
+[[hooks]]
 event = "SessionStart"
 command = "{python} -m kimi_mem.hooks.session_start"
 
@@ -33,7 +37,15 @@ command = "{python} -m kimi_mem.hooks.session_end"
 
 
 def get_python_executable() -> str:
-    """Return the Python executable path."""
+    """Return the Python executable path.
+
+    Prefers sys.executable when it can import kimi_mem (venv scenario),
+    otherwise falls back to PATH lookup.
+    """
+    import sys
+    # If running inside a venv or the current interpreter has kimi_mem, use it
+    if hasattr(sys, "executable") and sys.executable:
+        return sys.executable
     return shutil.which("python3") or shutil.which("python") or "python3"
 
 
@@ -86,17 +98,24 @@ def uninstall_hooks(dry_run: bool = False) -> None:
     filtered = []
     skip = False
     for line in lines:
-        if "kimi-mem hooks" in line and "Generated automatically" in line:
+        # Start of kimi-mem block (first comment line)
+        if "kimi-mem hooks" in line:
             skip = True
             continue
-        if skip and line.strip() and not line.strip().startswith("#") and not line.strip().startswith("["):
-            continue
-        if skip and line.strip().startswith("[["):
+        # During skip: drop comments, blank lines, and hook definitions
+        if skip:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("[[hooks]]"):
+                continue
+            if stripped.startswith("event = ") or stripped.startswith("command = "):
+                continue
+            # End of block — any non-hook line
             skip = False
         if not skip:
             filtered.append(line)
 
-    result = "\n".join(filtered).strip() + "\n"
+    # Clean up trailing/duplicate blank lines
+    result = "\n".join(filtered).rstrip() + "\n"
 
     if dry_run:
         print("--- Dry run: would write ---")

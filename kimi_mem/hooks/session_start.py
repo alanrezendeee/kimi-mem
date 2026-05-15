@@ -39,6 +39,9 @@ def main() -> None:
     injection = format_for_injection(memories)
 
     # Write to session-memory.md for the skill/agent to read
+    # NOTE: If the skill also reads this file, context may duplicate with
+    # additionalContext below. In practice Kimi CLI deduplicates or the skill
+    # should prefer the hook injection. Kept for backward compatibility.
     mem_dir = Path.home() / ".kimi"
     mem_dir.mkdir(exist_ok=True)
     mem_file = mem_dir / "session-memory.md"
