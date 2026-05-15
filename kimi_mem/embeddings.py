@@ -4,7 +4,7 @@ import os
 
 import httpx
 
-MOONSHOT_API_BASE = os.environ.get("MOONSHOT_API_BASE", "https://api.moonshot.cn/v1")
+MOONSHOT_API_BASE = os.environ.get("MOONSHOT_API_BASE", "https://api.moonshot.ai/v1")
 EMBEDDING_MODEL = os.environ.get("KIMI_MEM_EMBEDDING_MODEL", "moonshot-v1-embedding")
 EMBEDDING_DIM = int(os.environ.get("KIMI_MEM_EMBEDDING_DIM", "1024"))
 
