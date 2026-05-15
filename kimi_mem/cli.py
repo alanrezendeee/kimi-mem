@@ -180,6 +180,95 @@ def init() -> None:
     click.echo("✅ Database initialized.")
 
 
+@main.command()
+def doctor() -> None:
+    """Run health checks on kimi-mem installation."""
+    import subprocess
+    from pathlib import Path
+
+    from kimi_mem.config import get_db_path, get_kimi_config_path
+    from kimi_mem.db import get_connection
+
+    click.echo("🩺 kimi-mem doctor\n")
+
+    # Python
+    try:
+        result = subprocess.run(
+            [sys.executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        ok = result.returncode == 0
+        click.echo(f"{'✅' if ok else '❌'} Python: {result.stdout.strip() if ok else result.stderr.strip()}")
+    except Exception as e:
+        click.echo(f"❌ Python: {e}")
+
+    # Database
+    db_path = get_db_path()
+    if db_path.exists():
+        try:
+            with get_connection() as conn:
+                mem = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                vec = conn.execute("SELECT COUNT(*) FROM memory_vectors").fetchone()[0]
+                obs = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+                sess = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+                conn.execute("SELECT vec_version()")
+            click.echo(f"✅ Database: {db_path} ({db_path.stat().st_size / 1024:.0f} KB)")
+            click.echo(f"   Memories: {mem} | Vectors: {vec} | Observations: {obs} | Sessions: {sess}")
+        except Exception as e:
+            click.echo(f"❌ Database: {e}")
+    else:
+        click.echo(f"⚠️  Database: not initialized ({db_path})")
+
+    # Hooks
+    config_path = get_kimi_config_path()
+    if config_path:
+        content = config_path.read_text(encoding="utf-8")
+        if "kimi-mem hooks" in content:
+            events = ["Setup", "SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"]
+            missing = [e for e in events if f'event = "{e}"' not in content]
+            if missing:
+                click.echo(f"❌ Hooks: missing {', '.join(missing)} in {config_path}")
+            else:
+                click.echo(f"✅ Hooks: all 6 installed in {config_path}")
+        else:
+            click.echo(f"❌ Hooks: not found in {config_path}")
+    else:
+        click.echo("❌ Hooks: no Kimi config found")
+
+    # MCP
+    mcp_file = Path.home() / ".kimi" / "mcp.json"
+    if mcp_file.exists():
+        try:
+            data = json.loads(mcp_file.read_text(encoding="utf-8"))
+            if "kimi-mem" in data.get("mcpServers", {}):
+                click.echo(f"✅ MCP: kimi-mem registered in {mcp_file}")
+            else:
+                click.echo(f"⚠️  MCP: {mcp_file} exists but kimi-mem not registered")
+        except Exception as e:
+            click.echo(f"❌ MCP: {e}")
+    else:
+        click.echo("⚠️  MCP: not configured (optional)")
+
+    # Skill
+    skill_file = Path.home() / ".claude" / "skills" / "kimi-mem" / "SKILL.md"
+    if not skill_file.exists():
+        skill_file = Path.home() / ".kimi" / "skills" / "kimi-mem" / "SKILL.md"
+    extra_dirs = os.environ.get("KIMI_EXTRA_SKILL_DIRS", "")
+    found_skill = False
+    for d in extra_dirs.split(":"):
+        if d:
+            p = Path(d) / "kimi-mem" / "SKILL.md"
+            if p.exists():
+                found_skill = True
+                break
+    if skill_file.exists() or found_skill:
+        click.echo("✅ Skill: kimi-mem skill found")
+    else:
+        click.echo("⚠️  Skill: kimi-mem skill not found in default paths (optional)")
+
+
 @main.command("serve")
 @click.option("--host", default="127.0.0.1", help="Bind host.")
 @click.option("--port", default=37777, help="Bind port.")
